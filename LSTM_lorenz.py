@@ -80,23 +80,63 @@ if __name__ == '__main__':
         err = 10
         loss1 = 1
         i = 0
-        while loss1 > 1e-4 and i<20000:
+            for k in range(1):
+        print(k)
+        name = './data/'+case+'_'+str(k)+'.npy'
+data = np.load(name)
+#data = np.expand_dims(data.T, axis=1)
+data=np.moveaxis(data,-1,0)
+    data =data[:3000]
+    print(data.shape)
+    input  = torch.from_numpy(data[:-1,:,:]).double().to(device)
+    target = torch.from_numpy(data[1:,:,:]).double().to(device)
+    
+    seq = Sequence(hidden,layer,features,dropout).double().to(device)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(seq.parameters(), lr =0.01)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.7, patience=50, min_lr = 5e-5)
+    dirName = './RESULTS/'+case+'_'+str(k)
+    if not os.path.exists(dirName):
+        os.makedirs(dirName)
+    h_0 = torch.normal(mean=0.0, std=torch.ones(layer,input.size(1), hidden, dtype=torch.double)).to(device)
+    c_0 = torch.normal(mean=0.0, std=torch.ones(layer,input.size(1), hidden, dtype=torch.double)).to(device)
 
-            optimizer.zero_grad()
-            out = seq(input,h_0,c_0)
-            loss = criterion(out, target.to(device))
-            loss.backward()
-            optimizer.step()
-            scheduler.step(loss)
+if k==0:
+    torch.save(seq.state_dict(),'./init_model.pt')
+    else:
+        state_dict = torch.load('../0/init_model.pt', map_location=device)
+        seq.load_state_dict(state_dict)
 
-            torch.save(seq.state_dict(),dirName+'/mytraining.pt')
-            np.savetxt(dirName+'/loss.out',np.array([loss1]))
-
-            if i%(10)==0:
-                loss2 = loss
-                err = np.abs(loss2.item()-loss1)/10
-                loss1 = loss2.item()
-                print('FILE: ', k,'STEP TEST: ', i, 'test loss:', loss2.item(), 'lr: ', optimizer.param_groups[0]['lr'], 'err: ', err)
-            i += 1
-            sys.stdout.flush() 
-        print('END: '+str(k))
+err = 10
+    loss1 = 1
+    i = 0
+    epoch=1000
+    fish = np.zeros(epoch)
+    
+    train_loss= []
+    #while loss1 > 1e-3 and i<2000: old step counter
+    while i<epoch:
+        optimizer.zero_grad()
+        out = seq(input,h_0,c_0)
+        loss = criterion(out, target.to(device))
+        fish_=grad(loss, seq.parameters(),retain_graph=True)
+        fish_norm = 0
+        for partial_deriv in fish_ :
+            fish_norm += torch.norm(partial_deriv)**2
+        fish[i] = torch.sqrt(fish_norm)
+        loss.backward(retain_graph=True)
+        optimizer.step()
+        scheduler.step(loss)
+        
+        torch.save(seq.state_dict(),dirName+'/mytraining.pt')
+        np.savetxt(dirName+'/loss.out',np.array([loss1]))
+        
+        if i%(100)==0:
+            loss2 = loss
+            err = np.abs(loss2.item()-loss1)/100
+            loss1 = loss2.item()
+            print('FILE: ', k,'STEP TEST: ', i, 'test loss:', loss2.item(), 'lr: ', optimizer.param_groups[0]['lr'], 'err: ', err)
+        i += 1
+    sys.stdout.flush()
+    print('END: '+str(k))
+    
